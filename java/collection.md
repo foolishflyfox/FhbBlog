@@ -295,3 +295,123 @@ public void testToArray2() {
 
 `boolean add(E e)` 默认将元素加在队列的末尾。
 
+## 扩容操作实验
+
+由下面的实验得到如下的扩容逻辑：
+
+注：K表示扩容前容量。
+
+|类名|无参构造的容量|添加一个元素后的容量|扩容规则|
+|---|---|---|---|
+|ArrayList|0|10|K×1.5|
+|Vector|10|10|K×2|
+|ArrayDeque|16|16|K×2|
+|StringBuilder|16|16|K×2+2|
+
+```java
+public class ExpandCapacityTest {
+    static <T> T getParentFieldOfObj(Object obj, String fieldName, Class<T> clazz) {
+        try {
+            Field declaredField = obj.getClass().getSuperclass().getDeclaredField(fieldName);
+            declaredField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            T result = (T) declaredField.get(obj);
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    static <T> T getPrivateFieldOfObj(Object obj, String fieldName, Class<T> clazz) {
+        try {
+            Field declaredField = obj.getClass().getDeclaredField(fieldName);
+            declaredField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            T result = (T) declaredField.get(obj);
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void showCollectionExpand(Collection<Integer> collection, String fieldName) {
+        Object[] data = getPrivateFieldOfObj(collection, fieldName, Object[].class);
+        int cur = data.length;
+        for (int i = 0; i < 100; ++i) {
+            collection.add(i);
+            data = getPrivateFieldOfObj(collection, fieldName, Object[].class);
+            int t = data.length;
+            if (cur != t) {
+                System.out.println(i + " : " + cur + " -> " + t);
+                cur = t;
+            }
+        }
+    }
+
+    /**
+     * ArrayList 初始大小为 0，添加一个元素后变为 10，之后按 oldCapacity * 1.5 扩容
+     * 结果：
+     * 0 : 0 -> 10
+     * 10 : 10 -> 15
+     * 15 : 15 -> 22
+     * 22 : 22 -> 33
+     * 33 : 33 -> 49
+     * 49 : 49 -> 73
+     * 73 : 73 -> 109
+     */
+    @Test
+    public void testExpand() {
+        ArrayList<Integer> arrayList = new ArrayList<>();
+        showCollectionExpand(arrayList, "elementData");
+    }
+
+    /**
+     * 初始大小为 16，按 oldCapacity * 2 扩容
+     * 15 : 16 -> 32
+     * 31 : 32 -> 64
+     * 63 : 64 -> 128
+     */
+    @Test
+    public void testArrayDequeExpand() {
+        ArrayDeque<Integer> arrayDeque = new ArrayDeque<>();
+        showCollectionExpand(arrayDeque, "elements");
+    }
+
+    /**
+     * 初始大小为 10，按 oldCapacity * 2 扩容，stack 是 vector 的子类，扩容逻辑一致
+     * 10 : 10 -> 20
+     * 20 : 20 -> 40
+     * 40 : 40 -> 80
+     * 80 : 80 -> 160
+     */
+    @Test
+    public void testVectorExpand() {
+        Vector<Integer> vector = new Vector<>();
+        showCollectionExpand(vector, "elementData");
+    }
+
+    /**
+     * 初始大小为 16，之后按 oldCapacity * 2 + 2 扩容，StringBuffer 的扩容逻辑与 StringBuilder 一样
+     * 16 : 16 -> 34
+     * 34 : 34 -> 70
+     * 70 : 70 -> 142
+     */
+    @Test
+    public void testStringBuilderExpand() {
+        StringBuilder stringBuilder = new StringBuilder();
+        char[] value = getParentFieldOfObj(stringBuilder, "value", char[].class);
+        int cur = value.length;
+        for (int i = 0; i < 100; ++i) {
+            stringBuilder.append('1');
+            value = getParentFieldOfObj(stringBuilder, "value", char[].class);
+            int t = value.length;
+            if (cur != t) {
+                System.out.println(i + " : " + cur + " -> " + t);
+                cur = t;
+            }
+        }
+    }
+
+}
+```
+
