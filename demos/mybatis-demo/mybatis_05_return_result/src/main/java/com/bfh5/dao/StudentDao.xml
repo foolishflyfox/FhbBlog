@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bfh5.dao.StudentDao">
+    <!--    <insert id="insertStudent">-->
+    <!--        insert into student(id, name, email, age) values(#{id}, #{name}, #{email}, #{age})-->
+    <!--    </insert>-->
+    <!--    <select id="selectStudents" resultType="com.bfh4.bean.Student">-->
+    <!--        select id,name,email,age from student order by id-->
+    <!--    </select>-->
+    <!-- parameterType : dao 接口中方法参数的数据类型
+        parameterType 的值是 java 的数据类型全限定名称或是 mybatis 定义的别名
+        例如 parameterType = "java.lang.Integer"
+     -->
+    <!--
+        #{} 占位符，使用 PreparedStatement
+        ${} 占位符，使用 Statement，可以替换列名或表名
+    -->
+    <select id="selectStudentById" resultType="Student">
+        select id,name,email,age from student where id=#{id}
+    </select>
+    <select id="selectMultiParam" resultType="com.bfh5.bean.Student">
+        select id, name, email, age from student where name=#{myname} or age=#{myage}
+    </select>
+    <select id="countAllData" resultType="int">
+        select count(*) from student
+    </select>
+    <select id="selectAllIds" resultType="java.lang.Integer">
+        select id from student
+    </select>
+    <select id="selectStudentResultMap" resultType="java.util.Map">
+        select id,name,age from student where name=#{name} and age=#{age}
+    </select>
+    <select id="selectStudentMultiMap" resultType="java.util.Map">
+        select * from student where name=#{name} or age=#{age}
+    </select>
+    <!-- 使用 resultMap
+        1) 先定义 resultMap
+        2) 在 select 标签中，使用 resultMap 来引用1中定义的
+      -->
+    <resultMap id="studentMap" type="MyStudent">
+        <!--列名和java属性的关系-->
+        <id column="id" property="stuid"/>
+        <result column="name" property="stuname"/>
+        <result column="email" property="stuemail"/>
+        <result column="age" property="stuage"/>
+    </resultMap>
+    <select id="selectAllStudent" resultType="com.bfh5.bean.Student">
+        select id, name, email, age from student
+    </select>
+    <select id="selectAllMyStudent" resultMap="studentMap">
+        select * from student
+    </select>
+    <select id="selectAllMyStudent2" resultType="com.bfh5.bean.MyStudent">
+        select id stuid, name stuname, email stuemail, age stuage from student
+    </select>
+    <select id="selectLike" resultType="com.bfh5.bean.Student">
+        select * from student where name like #{name}
+    </select>
+    <select id="selectLike2" resultType="com.bfh5.bean.Student">
+        select * from student where name like "%" #{name} "%"
+    </select>
+</mapper>

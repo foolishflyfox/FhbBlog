@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration
+        PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+<configuration>
+    <settings>
+        <setting name="logImpl" value="STDOUT_LOGGING"/>
+    </settings>
+    <environments default="mydev">
+        <environment id="mydev">
+            <!-- mybatis 的事务类型 -->
+            <transactionManager type="JDBC"/>
+            <!-- dataSource 表示数据源 -->
+            <dataSource type="POOLED">
+                <property name="driver" value="com.mysql.cj.jdbc.Driver"/>
+                <property name="url" value="jdbc:mysql://localhost:3306/ssm"/>
+                <property name="username" value="root"/>
+                <property name="password" value="12345678"/>
+            </dataSource>
+        </environment>
+    </environments>
+    <mappers>
+        <mapper resource="com/bfh/dao/StudentDao.xml"/>
+        <!-- mapper 可以写多个 -->
+    </mappers>
+</configuration>
+
+<!--
+    mybatis 的主配置文件，只要定义数据库的配置信息，sql 映射文件的位置
+    1. 约束文件 "http://mybatis.org/dtd/mybatis-3-config.dtd"
+    2. configuration 根标签
+        2.1 environments 数据库的连接信息
+-->

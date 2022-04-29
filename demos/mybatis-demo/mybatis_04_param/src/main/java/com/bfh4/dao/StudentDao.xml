@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bfh4.dao.StudentDao">
+    <!--    <insert id="insertStudent">-->
+    <!--        insert into student(id, name, email, age) values(#{id}, #{name}, #{email}, #{age})-->
+    <!--    </insert>-->
+    <!--    <select id="selectStudents" resultType="com.bfh4.bean.Student">-->
+    <!--        select id,name,email,age from student order by id-->
+    <!--    </select>-->
+    <!-- parameterType : dao 接口中方法参数的数据类型
+        parameterType 的值是 java 的数据类型全限定名称或是 mybatis 定义的别名
+        例如 parameterType = "java.lang.Integer"
+     -->
+    <!--
+        #{} 占位符，使用 PreparedStatement
+        ${} 占位符，使用 Statement，可以替换列名或表名
+    -->
+    <select id="selectStudentById" resultType="com.bfh4.bean.Student">
+        select id,name,email,age from student where id=${id}
+    </select>
+    <select id="selectMultiParam" resultType="com.bfh4.bean.Student">
+        select id, name, email, age from student where name=#{myname} or age=#{myage}
+    </select>
+    <select id="selectMultiObject" resultType="com.bfh4.bean.Student">
+        select id, name, email, age from student where name=#{paramName} or age=#{paramAge}
+    </select>
+    <select id="selectMultiPosition" resultType="com.bfh4.bean.Student">
+        select id, name, age from student where name=#{param2} or age = #{param2}
+    </select>
+    <select id="selectMultiByMap" resultType="com.bfh4.bean.Student">
+        select id,name,age,email from student where name=#{myname} or age=#{age}
+    </select>
+    <select id="selectUse$" resultType="com.bfh4.bean.Student">
+        select id,name,age,email from student where name='${name}'
+    </select>
+    <select id="selectUse$Order" resultType="com.bfh4.bean.Student">
+        select id, name, age, email from student order by ${colName}
+    </select>
+</mapper>

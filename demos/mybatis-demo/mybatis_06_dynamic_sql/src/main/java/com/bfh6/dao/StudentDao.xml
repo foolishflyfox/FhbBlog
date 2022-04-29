@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.bfh6.dao.StudentDao">
+
+    <!--定义 sql 片段-->
+    <sql id = "select_info">select id, name, email, age from student </sql>
+
+    <select id="selectStudentIf" resultType="com.bfh6.bean.Student">
+        <!--select id, name, age, email from student-->
+        <include refid="select_info"></include>
+        where 1=1
+        <if test="name != null and name != '' ">
+            and name = #{name}
+        </if>
+        <if test="age > 0">
+            and age > #{age}
+        </if>
+    </select>
+    <select id="selectStudentWhere" resultType="com.bfh6.bean.Student">
+        <!-- select id, name, age, email from student -->
+        <include refid="select_info"></include>
+        <where>
+            <if test="name != null and name != '' ">
+                and name = #{name}
+            </if>
+            <if test="age > 0">
+                or age > #{age}
+            </if>
+        </where>
+    </select>
+    <select id="selectStudentForeach" resultType="com.bfh6.bean.Student">
+        select * from student where id in
+        <!--
+            collection: 表示接口中的方法参数的类型，如果是数组，使用 array，如果是 list 集合，使用 list
+            item: 自定义的，表示数组和集合成员的变量
+            open: 循环开始时的字符
+            close: 循环结束时的字符
+            seperator: 分隔符
+        -->
+        <foreach collection="list" open="(" separator="," close=")" item="myid">
+            #{myid}
+        </foreach>
+    </select>
+    <select id="selectStudentForeach2" resultType="com.bfh6.bean.Student">
+        select * from student where id in (-1
+<!--        <foreach collection="list" item="student" open="where id in (" separator="," close=")">-->
+<!--            #{student.id}-->
+<!--        </foreach>-->
+            <foreach collection="list" item="student">
+                ,#{student.id}
+            </foreach>
+        )
+    </select>
+    <select id="selectAll" resultType="com.bfh6.bean.Student">
+        <include refid="select_info"></include>
+        order by id
+    </select>
+
+</mapper>
