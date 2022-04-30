@@ -17,6 +17,8 @@
         <module>mybatis_04_param</module>
         <module>mybatis_05_return_result</module>
         <module>mybatis_06_dynamic_sql</module>
+        <module>mybatis_07_annotation</module>
+
     </modules>
 
     <properties>
