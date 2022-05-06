@@ -96,6 +96,10 @@ WantedBy=multi-user.target
 commonds 就是 Redis 的操作命令，例如：
 - `ping`: 与 redis 服务端做心跳测试，服务端正常会返回 pong
 
+#### Redis GUI 客户端
+
+redis-desktop-manager 可以从 https://www.macwk.com/ 下载。
+
 ## Redis 常见命令
 
 ### Redis 数据结构介绍
@@ -346,3 +350,237 @@ public class JedisPoolTest {
     }
 }
 ```
+
+### Spring Data Redis
+
+Spring Data 是 Spring 中数据操作的模块，包含对各种数据库的继承，其中对 Redis 的集成模块就叫做 SpringDataRedis。官网地址: https://spring.io/projects/spring-data-redis
+
+- 提供对不同的 Redis 客户端的整合(Lettuce 和 Jedis)
+- 提供对 RedisTemplate 统一 API 来操作 Redis
+- 支持 Redis 的发布订阅模式
+- 支持 Redis 哨兵和 Redis 集群
+- 支持基于 Lettuce 的响应式编程
+- 支持基于 JDK、JSON、字符串、Spring 对象的数据序列化与反序列化
+- 支持基于 Redis 的 JDK Collection 实现
+
+SpringDateRedis 中提供了 RedisTemplate 工具类，封装了对 Redis 的操作。并且将不同数据类型的操作 API 封装到不同的类型中。
+
+|API|返回值类型|说明|
+|---|---|---|
+|redisTemplate.opsForValue()|ValueOperations|操作 String 类型|
+|redisTemplate.opsForHash()|HashOperations|操作 Hash 类型|
+|redisTemplate.opsForList()|ListOperations|操作 List 类型|
+|redisTemplate.opsForSet()|SetOperations|操作 Set 类型|
+|redisTemplate.opsForZSet()|ZSetOperations|操作 SortedSet 类型||
+|redisTemplate||通用的命令|
+
+#### SpringDataRedis 快速入门
+
+SpringBoot 已经提供了对 SpringDataRedis 的支持，使用非常简单：
+
+1. 引入依赖
+```xml
+        <!-- Reids 依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- 连接池依赖 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
+```
+2. 配置文件
+打开 application.yaml 文件，写入如下内容：
+```yaml
+spring:
+  redis:
+    host: 192.168.155.129
+    port: 6379
+    password: 12345678
+    lettuce:
+      pool:
+        max-active: 8  # 最大连接
+        max-idle: 8  # 最大空闲连接
+        min-idle: 0  # 最小空闲连接
+        max-wait: 100  # 连接等待时间
+```
+
+3. 注入 RedisTemplate
+```java
+@Autowired
+private RedisTemplate redisTemplate;
+```
+
+4. 编写测试
+```java
+@SpringBootTest
+class SpringbootRedisDemoApplicationTests {
+
+    @Autowired
+    private RedisTemplate redisTemplate;
+
+    // @BeforeEach
+    // void configRedisTemplate() {
+    //     RedisSerializer stringSerializer = new StringRedisSerializer();
+    //     // 解决写入 redis 时出现 \xac\xed\x00\x05t\x00\x04 前缀问题
+    //     redisTemplate.setKeySerializer(stringSerializer);
+    //     redisTemplate.setValueSerializer(stringSerializer);
+    //     redisTemplate.setHashKeySerializer(stringSerializer);
+    //     redisTemplate.setHashValueSerializer(stringSerializer);
+    // }
+
+    @Test
+    void testString() {
+        // 插入一条 string 类型数据
+        redisTemplate.opsForValue().set("name", "foolishflyfox");
+        // 读取一条 string 类型数据
+        Object name = redisTemplate.opsForValue().get("name");
+        System.out.println("name = " + name);
+    }
+}
+```
+
+#### SpringDataRedis 的序列化方式
+
+RedisTemplate 可以接收任意 Object 作为值写入 Redis，只不过写入前会把 Object 序列化为字节形式，默认是采用 JDK 序列化，存在例如 `\xac\xed\x00\x05t\x00\x04` 的前缀。
+
+缺点：
+- 可读性查
+- 内存占用较大
+
+我们可以自定义 RedisTemplate 的序列化方式，首先要导入 jackson 包：
+```xml
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+</dependency>
+```
+
+java 代码如下：
+
+```java
+@Configuration
+public class RedisConfig {
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory redisConnectionFactory) {
+        // 创建 Template
+        RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
+        // 设置连接工厂
+        redisTemplate.setConnectionFactory(redisConnectionFactory);
+        // 设置序列化工具
+        // key 和 hashKey 采用 string 序列化
+        redisTemplate.setKeySerializer(RedisSerializer.string());
+        redisTemplate.setHashKeySerializer(RedisSerializer.string());
+        // value 和 hashValue 采用 JSON 序列化
+        redisTemplate.setValueSerializer(RedisSerializer.json());
+        redisTemplate.setHashValueSerializer(RedisSerializer.json()
+        return redisTemplate;
+    }
+}
+```
+测试代码为：
+```java
+@SpringBootTest
+class SpringbootRedisDemoApplicationTests {
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
+
+    @Test
+    void testString() {
+        // 插入一条 string 类型数据
+        redisTemplate.opsForValue().set("name", "笨飞狐");
+        // 读取一条 string 类型数据
+        Object name = redisTemplate.opsForValue().get("name");
+        System.out.println("name = " + name);
+    }
+}
+```
+
+
+**对象序列化**: 下面测试对象的序列化，定义一个 User 类型：
+```java
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class User {
+    private String name;
+    private Integer age;
+}
+```
+测试代码：
+```java
+@Test
+void testSaveUser() {
+    // 写入对象
+    redisTemplate.opsForValue().set("user:100", new User("张三", 21));
+    // 获取数据
+    User user = (User) redisTemplate.opsForValue().get("user:100");
+    System.out.println("result = " + user);
+}
+```
+通过 RDM 图形化工具看到写入的 redis 内容为：
+```json
+{
+  "@class": "com.bfh.redis.User",
+  "name": "张三",
+  "age": 21
+}
+```
+通过 `@class` 字段实现对 json 的反序列化。
+
+尽管 JSON 的序列化方式可以满足我们的需求，但依然存在一些问题。例如 `@class` 字段就会带来额外的内存开销。
+
+为了节省内存空间，我们并不会使用 JSON 序列化器来处理 value，而是统一使用 String 序列化器，要求只存储 String 类型的 key 和 value。当需要存储 Java 对象时，手动完成对象的序列化和反序列化。
+
+#### StringRedisTemplate
+
+Spring 默认提供了一个 StringRedisTemplate 类，它的 key 和 value 的序列化方式默认就是 String 方式，省去了我们自定义 RedisTemplate 的过程：
+```java
+@Autowired
+private StringRedisTemplate redisTemplate;
+@Test
+void testSaveUser() throws JsonProcessingException {
+    ObjectMapper mapper = new ObjectMapper();
+    // 创建对象
+    User user = new User("李四", 22);
+    // 手动序列化
+    String json = mapper.writeValueAsString(user);
+    // 写入数据
+    redisTemplate.opsForValue().set("user:200", json);
+    // 获取数据
+    String jsonUser = redisTemplate.opsForValue().get("user:200");
+    // 手动反序列化
+    User user1 = mapper.readValue(jsonUser, User.class);
+    System.out.println("user1 = " + user1);
+}
+```
+在 redis 中存放的内容为：
+```json
+{
+  "name": "李四",
+  "age": 22
+}
+```
+
+#### hash 使用 redisTemplate
+
+```java
+@Test
+void testHash() {
+    redisTemplate.opsForHash().put("user:400", "name", "小明");
+    Map<String, Object> map = new HashMap<>();
+    map.put("email", "xiaoming@qq.com");
+    map.put("age", "18");
+    redisTemplate.opsForHash().putAll("user:400", map);
+
+    Map<Object, Object> entries = redisTemplate.opsForHash().entries("user:400");
+    System.out.println("entries = " + entries);
+}
+```
+
+## 实战
+
+
