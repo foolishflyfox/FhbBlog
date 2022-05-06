@@ -100,7 +100,7 @@ commonds 就是 Redis 的操作命令，例如：
 
 ### Redis 数据结构介绍
 
-Reis 是一个 key-value 的数据库，key 一般是 String 类型，不过 value 的类型多种多样。
+Redis 是一个 key-value 的数据库，key 一般是 String 类型，不过 value 的类型多种多样。
 
 - 基本类型
     - String: hello world
