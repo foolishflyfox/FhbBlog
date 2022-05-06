@@ -40,7 +40,7 @@ Redis 诞生于 2009 年，全称为 Remote Dictionary Server，远程字典服�
     - 解压，通过 `make && make install` 安装 redis
 
 - redis.conf 文件的配置在
-    - `bind`: 改为 0.0.0.0 表示任意 IP 可以访问
+    - `bind`: 改为 0.0.0.0 或注释掉，表示任意 IP 可以访问
     - `daemonize`: 改为 yes，表示后台运行
     - `requirepass`: 设置密码
     - `port`: 表示监听的端口
@@ -243,6 +243,8 @@ Redisson: Redisson 是一个基于 Redis 实现的分布式、可伸缩的 Java 
 
 Jedis 的官网地址：https://github.com/redis/jedis 。
 
+#### Jedis 基本使用
+
 1. 引入依赖
 ```xml
 <dependency>
@@ -291,4 +293,56 @@ Jedis 的官网地址：https://github.com/redis/jedis 。
             jedis = null;
         }
     }
+```
+
+#### Jedis 连接池
+
+Jedis 本身是线程不安全的，并且频繁创建和销毁连接会有性能损耗，因此推荐使用 Jedis 连接池替代 Jedis 的直连方式。
+
+```java
+public class JedisConnectionFaction {
+    private static final JedisPool jedisPool;
+
+    static {
+        JedisPoolConfig jedisPoolConfig = new JedisPoolConfig();
+        // 最大连接，表示连接池中最多能有多少个连接
+        jedisPoolConfig.setMaxTotal(8);
+        // 最大空闲连接，表示处于空闲状态的连接数量的上限
+        jedisPoolConfig.setMaxIdle(8);
+        // 最小空闲连接，如果连接长时间处于空闲就会被释放，该值设置被释放后最少留多少空闲连接
+        jedisPoolConfig.setMinIdle(0);
+        // 设置最长等待时间, ms。表示连接池中没有连接可用，最长等待多久
+        jedisPoolConfig.setMaxWaitMillis(2000);
+        jedisPool = new JedisPool(jedisPoolConfig, "ubuntu-01", 6379,
+                1000, "12345678");
+    }
+
+    // 获取 Jedis 对象
+    public static Jedis getJedis() {
+        return jedisPool.getResource();
+    }
+}
+```
+测试：
+```java
+public class JedisPoolTest {
+    private Jedis jedis;
+
+    @Before
+    public void before() {
+        jedis = JedisConnectionFaction.getJedis();
+    }
+
+    @Test
+    public void test01() {
+        jedis.set("hello", "world");
+        System.out.println(jedis.get("hello"));
+    }
+
+    @After
+    public void after() {
+        // 如果是在连接池中，并不会真正关闭
+        jedis.close();
+    }
+}
 ```
