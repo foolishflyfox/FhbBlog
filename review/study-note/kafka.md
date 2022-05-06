@@ -1,0 +1,42 @@
+# Kafka
+
+## 简介
+
+### 消息队列简介
+
+**什么是消息队列**：Message Queue，经常缩写为 MQ。从字面上理解，消息队列是一种用来存放消息的队列。
+
+消息队列就是将需要传输的数据存放在队列中。
+
+#### 消息队列中间件
+
+消息队列中间件就是用来存储消息的软件(组件)。
+
+目前市面上的消息队列中间件有很多，例如 Kafka、RabbitMQ、ActiveMQ、RocketMQ、ZeroMQ 等。
+
+很多时候消息队列不是永久存储的，是作为临时存储存在的(设定一个期限)。
+
+### 应用场景
+
+#### 异步处理
+
+![消息队列-异步处理](http://assets.processon.com/chart_image/62749339e0b34d07585d2295.png)
+
+因为发送注册短信和发送邮件延时对任务是可以接受的，因此可以将这两个任务通过异步完成。
+
+#### 消息解耦
+
+![消息队列-消息解耦](http://assets.processon.com/chart_image/627495f2e0b34d07585d32b5.png)
+
+#### 流量削峰
+
+![消息队列-流量削峰](http://assets.processon.com/chart_image/627498d40791290711f8d834.png)
+
+#### 日志处理
+
+大数据领域常见。日志量通常会非常大，需要通过消息队列缓存后处理。
+
+![](http://assets.processon.com/chart_image/62749b00f346fb18e7be6c15.png)
+
+
+
