@@ -49,6 +49,28 @@ Redis 诞生于 2009 年，全称为 Remote Dictionary Server，远程字典服�
     - `database`: 指定库的数量，设置为 1，表示只用1个库，默认有16个库，编号 0-15
     - `maxmemory`: 设置 redis 能够使用的最大内存，例如 `maxmemory 512mb`
     - `logfile`: 日志文件，默认为空，不记录日志，可以指定日志文件名
+    - `stop-writes-on-bgsave-error yes`: 当 Redis 无法写入磁盘，直接关闭 Redis 的写操作，避免数据丢失
+    - `rdbcompression yes`: 持久化文件允许压缩。对于存储到磁盘中的快照，可以设置是否进行压缩，如果是的话，redis 会采用 LZF 算法进行压缩。如果你不想消耗 CPU 来压缩的话，可以设置关闭此功能
+    - `rdbchecksum yes`: 检查完整性，在存储快照后，还可以让 redis 使用 CRC64 算法进行数据校验，但是这样会增加大约 10% 的性能消耗，如果希望获取到最大的性能提升，可以关闭此功能，推荐 yes
+    - `save <seconds> <changes>`: RDB 是整个内存压缩过的 snapshot，可以配置符合的快照触发条件，`save 60 10000` 表示1分钟内改了1w次，`save 300 100` 表示5分钟内改了100次，`save 3600 1` 表示1小时内改了1次，上述为默认配置。
+    - `appendonly no`: 是否开始 AOF，默认不开启。
+    - `appendfilename "appendonly.aof"`: AOF 文件名。
+    - `appendfsync`
+        - `appendfsync everysec`: 每秒同步，每秒记入日志一次，如果宕机，本秒的数据可能丢失
+        - `appendfsync always`: 始终同步，每次 Redis 的写入都会立刻记入日志，性能较差，但数据完整性比较好；
+        - `appendfsync no`: redis 不主动同步，将同步时机交给操作系统；
+    
+#### 安装建议
+
+- 安装目录: */usr/local/bin/*
+- 配置文件: */usr/local/etc/redis.conf*
+    - 修改存放数据目录: `dir /usr/local/data/redis`
+- 数据目录: */usr/local/data/redis/* ，该目录存放数据文件 *dump.rdb*，日志文件 *redis.log* 等
+- 创建文件 */usr/local/bin/redis* ，添加如下命令，并将其设为可执行(`chmod u+x /usr/local/bin/redis`)，之后就可以通过 `sudo redis` 启动 redis 服务了。
+```sh
+#/bin/bash
+/usr/local/bin/redis-server /usr/local/etc/redis.conf
+```
 
 #### 开机自启动
 
@@ -129,6 +151,8 @@ Redis 是一个 key-value 的数据库，key 一般是 String 类型，不过 va
 - `exists key [key ...]`
 - `expire key seconds`: 给一个 key 设置有效期，到期后被删除
 - `ttl key`: 查看一个 key 的剩余有效期
+- `info replication`: 查看分区信息
+- `slaveof host port`: 成为指定主机的从机   
 
 #### String 类型
 
@@ -236,6 +260,97 @@ SortedSet 具备以下特性：
 - `zdiff` / `zinter` / `zunion`
 
 降序在 `z` 后加 `rev`。
+
+### Redis 新数据类型
+
+#### Bitmaps
+
+命令：
+- `setbit key offset value`
+
+实例：每个独立用户是否访问过网站存放在 Bitmaps 中。将访问过的用户标记为1，没有访问过的用户标记为0，用偏移量作为用户的 id。
+
+设置键的第 offset 个位的值。假设有 20 个用户，userid = 1,6,11,5,19的用户对网站进行了访问，命令为：
+```
+setbit user:20220507 1 1
+setbit user:20220507 6 1
+setbit user:20220507 11 1
+setbit user:20220507 5 1
+setbit user:20220507 19 1
+```
+注意：
+- 很多应用的用户 id 以一个指定数字开头(例如10000)开头，直接将用户 id 和 Bitmaps 的偏移量对应会造成一定的浪费，通常的做法是每次做 setbit 操作时将用户 id 减去这个指定数字。
+- 在第一次初始化 Bitmaps 时，如果偏移量非常大，那么整个初始化过程会比较慢，可能造成 redis 阻塞
+
+- `getbit key offset`: 取出存放的值
+- `bitcount key [start end]`: 统计从 start 字节到 end 字节比特值为 1 的数量。-1 表示最后一个字节。
+- `bitop operation destkey key [key ...]`: operation 包括 AND, OR, XOR 和 NOT
+
+#### HyperLogLog
+
+在工作中，我们经常会遇到与统计相关的功能，比如统计网站的 PV(Page View 页面访问量)，可以使用 Redis 的 incr、incrby 轻松实现。
+
+但是像 UV(Unique Visitor，独立访客)、独立 IP 数、搜索记录数等需要去重合计数的问题如何解决？这种求集合中不重复元素个数的问题称为基数问题。
+
+解决基数问题有很多方案：
+1. 数据存储在 MySQL 表中，使用 distinct count 计算不重复个数
+2. 使用 Redis 提供的 hash、set、bitmaps 等数据结构来处理
+
+以上的方案结果精确，但随着数据不断增加，导致占用空间越来越大，对于非常大的数据集是不切实际的。
+
+Redis 推出了 HyperLogLog，能够降低一定的精度来减少存储压力。
+
+Redis HyperLogLog 是用来做基数统计的算法，HyperLogLog 的优点是：在输入元素的数量体积非常非常大时，计算基数所需的空间总是固定的、并且是很小的。
+
+在 Redis 中，每个 HyperLogLog 键只需花费 12 KB 内存，就可以计算接近 2^64 个不同元素的基数。
+
+因为 HyperLogLog 只会根据输入元素来计算基数，而不会存储输入元素本身，所以 HyperLogLog 不能像集合那样，返回输入的各个元素。
+
+什么是基数？例如数据集 {1,3,5,7,5,7,8}，那么这个数据集的基数集为 {1,3,5,7,8}，基数为5。基数估计就是在误差可接受的范围内，快速计算基数。
+
+命令：
+- `pfadd key element [element ...]`: 添加元素
+- `pfcount key`: 统计不重复元素个数
+- `pfmerge destkey sourcekey [sourcekey ...]`: 合并基数集合
+
+#### Geospatial
+
+Redis 3.2 中增加了对 GEO 类型的支持。GEO，Geographic，地理信息的缩写，该类型就是元素的二维坐标，在地图上就是经纬度。redis 基于该类型，提供了经纬度设置、查询、范围查询、距离查询、经纬度 Hash 等常见操作。
+
+命令：
+- `geoadd key 经度 纬度 城市名`
+- `geopos key 城市名`
+- `geodist key 城市1 城市2` 
+- `georadius key 经度 纬度 半径`: 取指定地点半径内的城市
+
+### Redis 的发布和订阅
+
+#### 什么是发布与订阅
+
+Redis 发布订阅(pub/sub)是一种消息通信模式：发送者(pub)发送消息，订阅者(sub)接收消息。
+
+Redis 客户端可以订阅任意数量的频道。
+![redis 订阅与发布](http://assets.processon.com/chart_image/62762aebe0b34d07586244fe.png)
+
+#### 使用发布和订阅
+
+1. 打开一个客户端订阅 channel1: `subscribe channel1`
+```
+ubuntu-01:6379> subscribe channel1
+Reading messages... (press Ctrl-C to quit)
+1) "subscribe"
+2) "channel1"
+3) (integer) 1
+```
+2. 另一个客户端发布消息: `publish channel1 hello`，第一个客户端将收到数据。
+
+#### redis vs kafka
+
+redis 和 kafka 都有消息发布与订阅。两者的区别如下：
+
+- Redis 支持基于推送的消息传递，这意味着推送到 Redis 的每条消息都将自动传递给所有订阅者。而 Kafka 支持基于拉式的消息，客户端可以根据自己的消费能力主动拉取数据。
+- Redis 不提供消息的持久化，不能多次消费同一条消息。Kafka 可以通过设置保留策略设置消息保留时间，并且通过重置消费位点实现消息的多次消费。
+
 
 ### Redis 的 Java 客户端
 
@@ -347,6 +462,79 @@ public class JedisPoolTest {
     public void after() {
         // 如果是在连接池中，并不会真正关闭
         jedis.close();
+    }
+}
+```
+
+#### Jedis 实例-手机验证码
+
+要求：
+1. 输入手机号，点击发送后随机生成6位数字码，2分钟有效 
+2. 输入验证码，点击验证，返回成功或失败 
+3. 每个手机号每天只能输入3次 
+
+代码：
+```java
+public class PhoneCode {
+    private static final long EXPIRE_SECONDS = 120;
+    private static final String REDIS_HOST = "ubuntu-01";
+    private static final int REDIS_PORT = 6379;
+    private static Random random = new Random();
+
+    public static void main(String[] args) {
+        String phone = "13678765432";
+        // 模拟验证码发送
+         verifyCode(phone);
+        // 验证码确认
+        // getRedisCode(phone, "436388");
+    }
+
+    // 1. 生成 6 位数字验证码
+    public static String getCode() {
+        return String.format("%06d", random.nextInt(1000000));
+    }
+
+    // 2. 每个手机每天只能发三次，验证码放到 redis 中，设置过期时间
+    public static void verifyCode(String phone) {
+        // 连接 redis
+        Jedis jedis = new Jedis(REDIS_HOST, REDIS_PORT);
+        // 拼接 key
+        // 手机发送次数 key
+        String countKey = getCountKey(phone);
+        // 验证码 key
+        String codeKey = getCodeKey(phone);
+        if (jedis.get(countKey) == null) {
+            jedis.setex(countKey, 24 * 60 * 60, "0");
+        }
+        Long count = jedis.incr(countKey);
+        if (count > 3) {
+            System.out.println("今天发送次数已经测过3次");
+            jedis.close();
+            return;
+        }
+        // 验证码放入 redis
+        jedis.setex(codeKey, EXPIRE_SECONDS, getCode());
+        System.out.println("验证码发送成功");
+        jedis.close();
+    }
+
+    // 3. 验证码校验
+    public static void getRedisCode(String phone, String code) {
+        Jedis jedis = new Jedis(REDIS_HOST, REDIS_PORT);
+        String targetCode = jedis.get(getCodeKey(phone));
+        if (Objects.equals(targetCode, code)) {
+            System.out.println("验证码校验成功");
+        } else {
+            System.out.println("验证码校验失败");
+        }
+        jedis.close();
+    }
+
+    private static String getCountKey(String phone) {
+        return "VerifyCode:" + phone + ":count";
+    }
+    private static String getCodeKey(String phone) {
+        return "VerifyCode:" + phone + ":code";
     }
 }
 ```
@@ -581,6 +769,334 @@ void testHash() {
 }
 ```
 
-## 实战
+## Redis 事务
+
+### Redis 事务定义
+
+Redis 事务是一个单独的隔离操作：事务中所有命令都会序列化、按顺序地执行。事务在执行过程中不会被其他客户端发送来的命令打断。
+
+Redis 事务的主要作用就是**串联多个命令**，防止别的命令插队。
+
+### Multi、Exec、discard
+
+从输入 Multi 命令开始，输入的命令会依次进入命令队列中，但不会执行，直到输入 Exec 后，Redis 会将之前的命令队列中的命令依次执行。
+
+组队过程中可以通过 discard 来放弃组队。
+
+### 事务的错误处理
+
+组队中某个命令出现了报告错误，执行时整个队列会被取消。(例如输入命令格式错误)
+
+- `mult`: 开始一个事务，进入组队阶段
+- `exec`: 执行一个事务，进入执行阶段
+- `discard`: 取消一个事务
+
+执行阶段某个命令报出错误，则只有报错命令不会被执行，其他的命令都会被执行。(例如对一个字符串自增)。
+
+- `watch key [key ...]`: 在执行 multi 之前，先执行该命令，如果在事务在执行之前这些 key 被其他命令所改动，那么事务将被打断。
+
+### Redis 事务三特性
+
+- 单独的隔离操作: 事务中所有命令都会序列化、按顺序地执行。事务在执行的过程中不会被其他客户端发来的命令请求所打断；
+- 没有隔离级别的概念: 队列中命令没有提交之前都不会实际被执行，因为事务提交前任何指令都不会被执行
+- 不保证原子性: 事务中如果有一条命令执行失败，其后的命令仍然会被执行，没有回滚
+
+### Redis 事务案例 - 秒杀案例
+
+代码见项目：*demos/redis-demo/jedis-demo* 。
+秒杀业务: *SecKillDemo.java*
+业务测试: *SecKillTest.java*
+
+Lua 脚本在 Redis 中的优势：将复杂的或者多步的 redis 操作写为一个脚本，一次提交给 redis 执行，减少反复连接 redis 的次数，提升性能。
+
+Lua 脚本是类似于 redis 事务，有一定的原子性，不会被其他命令插队，可以完成一些 redis 的事务操作。
+
+但是注意 redis 的 lua 脚本功能只有在 Redis 2.6 以上版本才能使用。可以利用 lua 脚本淘汰用户，解决超卖问题。
+
+## Redis 持久化
+
+Redis 提供了两种不同形式的持久化方式：
+- RDB (Redis Database)
+- AOF (Append Of File)
+
+### RDB
+
+#### RDB 是什么
+
+在指定的时间间隔内将内存中的数据集快照写入磁盘，也就是所谓的 Snapshot 快照，它恢复时是将快照文件直接读入内存中。
+
+#### 备份是如何执行的
+
+Redis 会单独创建 (fork) 一个子进程来完成持久化，先将数据写入到一个临时文件，待持久化过程都结束，再用这个临时文件替换上次持久化好的文件。整个过程中，主进程不进行任何 IO 操作，这就确保了极高的性能。如果需要进行大规模的数据恢复，且对于数据恢复的完整性不是非常敏感，那么 RDB 方式要比 AOF 方式更加高效。
+
+RDB 的缺点是最后一次持久化后的数据可能丢失。
+
+#### Fork
+
+Fork 的使用是复制一个与当前进程一样的进程。新进程的所有数据(变量、环境变量、程序计数器等)数值和原进程一致，但是是一个全新的进程，并作为原进程的子进程。
+
+在 Linux 程序中，fork() 会产生一个和父进程完全相同的子进程，但子进程在此后多会用 exec 系统调用，处于效率考虑，Linux 中引入了"写时复制技术"。
+
+一般情况父进程和子进程会共用一段为例内存，只有进程空间的各段的内容要发生变化时，才会将父进程的内容复制一份给子进程。
+
+#### 优势
+
+- 适合大规模的数据恢复
+- 对数据完整性和一致性要求不高更适合使用
+- 节省磁盘空间
+- 恢复速度快
+
+#### 劣势
+
+- 可能存在数据丢失
+
+### AOF
+
+AOF 是 Append Only File 的简称。
+
+#### AOF 是什么
+
+以日志的形式记录每个写操作(增量保存)，将 Redis 执行过的所有写命令记录下来(读操作不记录)，只许最佳文件，但不可以改写文件。redis 启动之初会读取该文件重新构建数据，换言之，redis 重启就根据日志文件的内容将写指令从前到后执行一次以完成数据的恢复工作。
+#### AOF持久化流程
+
+1. 客户端的请求写命令会被 append 追加到 AOF 缓冲区中；
+2. AOF 缓冲区根据 AOF 持久化策略 [always, everyseec, no] 将操作 sync 同步到磁盘的 AOF 文件中；
+3. AOF 文件大小超过重写策略或手动重写时，会对 AOF文件 rewrite 重写，压缩 AOF 文件容量。
+4. Redis 重写时，会重新 load 加载 AOF 文件中的写操作达到数据恢复的目的；
+
+#### AOF 默认不开启
+
+可以在 redis.conf 中配置文件名称，默认为 appendonly.aof。
+
+AOF 文件的保存路径，同 RDB 的路径一致。
+
+当 AOF和 RDB 同时开启时，系统默认读取 AOF 的数据(数据不存在丢失)。
+
+AOF 启动、修复、恢复：
+- AOF 的备份机制和性能虽然和 RDB 不同，但是备份和恢复的操作同 RDB 一样，都是拷贝备份，需要恢复时在拷贝到 Redis 工作目录，启动系统即加载。
+
+#### Rewrite 压缩
+
+AOF 采用文件追加方式，文件会越来越大，为了避免出现这种情况，新增了重写机制，当 AOF 文件的大小超过所设定的阈值时，Redis 就会启动 AOF 文件的内容压缩，只保留可以恢复数据的最小指令集。
+
+## Redis 主从复制
+
+主机数据更新后，根据配置和策略，自动同步到备机的 **master/slaver 机制**,Master 以写为主，Slave 以读为主。
+
+好处：
+- 读写分离
+- 容灾快速恢复
+
+- 配置一主多从: `slaveof ip port`
+- 宕机的情况
+    - 从机宕机后，主机查询 `info replication` 中 **connected_slaves** 的值会减一；
+    - 从机宕机重启后，需要通过 `slaveof` 重新设置主服务器
+    - 主服务器宕机后，从服务器不会变为主服务器，从服务器会显示主服务器已经 down，主服务器重启后还是主服务器。
+- 薪火相传: A 是 B 的主服务器，B 是 C 的主服务器
+- 反客为主: 从服务器变为主服务器
+    - 手动操作: `slaveof no one`
+    - 哨兵模式(反客为主的自动版): 能够后台监控主机是否发生故障，如果故障了根据投票数自动降从库转换为主库
+        1. 新建 *redis-sentinel.conf* ，内容为 `sentinel monitor mymaster ubuntu-01 6379 1` ，最后的1表示多少个哨兵同意，就进行切换
+        2. 启动哨兵：`redis-sentinel /usr/local/etc/redis-sentinel.conf`
+
+主从复制的原理：
+1. 从服务器连接上主服务器后，从服务器向主服务器发送进行数据同步的消息；
+2. 主服务器收到从服务器发送的消息，主服务器会进行持久化 reb 文件，把 rdb 文件发送到从服务器，从服务器拿到 rdb 进行读取
+3. 每次主服务器进行写操作后，和从服务器进行数据同步（主服务器主动）
+
+## Redis 集群
+
+集群解决问题：
+- 容量不够问题
+- 并发写问题
+
+## 应用问题
+
+### 缓存穿透
+
+缓存穿透的现象：
+1. 应用服务器压力变大
+2. redis 命中率降低
+3. 一直查询数据库
+
+问题产生的原因：
+1. redis 查询不到数据库
+2. 出现很多非正常 url 访问
+
+常见的解决方案：
+1. 对空值做缓存：如果一个查询返回的数据为空(不管数据是否不存在)，我们仍然将这个空结果缓存，设置空结果的过期时间很短，最长不超过5分钟
+2. 设置可访问的名单(白名单)
+3. 使用布隆过滤器
+4. 进行实时监控：当发现 Redis 的命中率开始急速降低时，排查访问对象和访问的数据，和运维人员配合，可以设置黑名单限制服务
+
+### 缓存击穿
+
+缓存击穿: 
+1. 数据前访问压力瞬时增加
+2. redis 里面没有大量key过期
+3. redis 正常运行
+
+可能的原因：
+1. redis 某个 key 过期了，大量访问使用这个 key
+
+解决方案：
+1. 预先设置热门数据：在 redis 高峰访问之前，把一些热门数据提前传入到 redis 中，加大这些热门数据 key 的时长
+2. 实时调整：现场监控哪些数据热门，实时调整 key 的过期时间
+3. 使用锁
+
+### 缓存雪崩
+
+现象：
+1. 数据库压力变大，服务器崩溃
+
+原因：
+1. 在极少时间段内，查询大量 key 的集中过期情况
+
+解决方案：
+1. 构建多级缓存架构
+2. 使用锁或队列
+3. 设置过期标志更新缓存
+4. 将缓存失效时间分散
+
+### 分布式锁
+
+分布式锁主流的实现方案：
+1. 基于数据库实现分布式锁
+2. 基于缓存(redis等)
+3. 基于 ZooKeeper
+
+redis 版解决方案：
+1. 使用 `setnx` 上锁，使用 `expire` 设置过期时间，使用 `del` 释放锁，同时上锁加设置过期时间 `set user 10 nx ex 20`
+
+## Redis 企业实战
+
+可参考: 
+- https://icode.best/i/10243847050154
+
+黑马点评使用 Redis，包括如下功能：
+- 短信登录: Redis 的共享 Session 应用
+- 商户查询缓存: 企业的缓存使用技巧，包括缓存雪崩、穿透等问题解决
+- 达人探店: 基于 List 的点赞列表，基于 SortedSet 的点赞排行榜
+- 优惠券秒杀: Redis 的计数器、Lua 脚本 Redis、分布式锁、Redis 的三种消息队列
+- 好友关注: 基于 Set 集合的关注、取消关注、共同关注、消息推送等功能
+- 附近商户: Redis 的 GeoHash 应用
+- 用户签到: Redis 的 BitMap 数据统计功能
+- UV 统计: Redis 的 HyperLog / Bitmap 的统计功能
+
+### 导入后端项目并运行
+
+- 导入黑马点评项目
+    - 数据库初始化
+        - 创建 hmdp 库: `create database hmdp;`
+        - 使用 hdmp 库: `use hmdp`
+        - 导入数据: `source hmdp.sql`
+    - 其中的表有
+        - tb_user: 用户表
+        - tb_user_info: 用户详情表
+        - tb_shop: 商户信息表
+        - tb_shop_type: 商户类型表
+        - tb_blog: 用户日记表(达人探店日记)
+        - tb_follow: 用户关注表
+        - tb_voucher: 优惠券表
+        - tb_voucher_order: 优惠券的订单表
+
+黑马点评项目架构:
+
+![](http://assets.processon.com/chart_image/6275d62c0791290711fc4f28.png)
+
+
+启动项目后，在浏览器访问: http://localhost:8081/shop-type/list ，如果能看到数据则证明项目没有问题。
+
+### 导入前端项目
+
+采用前后端分离的方式进行部署，前端项目部署在虚拟机 ubuntu-01 中。
+
+1. 安装 Nginx: `sudo apt install nginx`;
+1. 将前端项目拷贝到虚拟机中;
+1. 修改 Nginx 的配置文件 */etc/nginx/nginx.conf* ，添加如下内容：
+```
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+	worker_connections 768;
+	# multi_accept on;
+}
+
+http {
+
+	##
+	# Basic Settings
+	##
+
+	sendfile on;
+	tcp_nopush on;
+	tcp_nodelay on;
+	keepalive_timeout 65;
+	types_hash_max_size 2048;
+	# server_tokens off;
+
+	# server_names_hash_bucket_size 64;
+	# server_name_in_redirect off;
+
+	include /etc/nginx/mime.types;
+	default_type application/octet-stream;
+
+    # === 添加内容开始 ===
+	server {
+        # 服务端口号
+		listen 8080;
+		server_name localhost;
+		location / {
+            # 前端项目目录
+			root /home/huabinfeng/servers/hmdp-nginx-1.18.0/html/hmdp;
+			index index.html index.html;
+		}
+		error_page 500 502 503 504 /50x.html;
+		location = /50x.html {
+			root	html;
+		}
+		location /api {
+			default_type  application/json;
+			#internal;
+			keepalive_timeout   30s;
+			keepalive_requests  1000;
+			#支持keep-alive
+			proxy_http_version 1.1;
+			rewrite /api(/.*) $1 break;
+			proxy_pass_request_headers on;
+			#more_clear_input_headers Accept-Encoding;
+			proxy_next_upstream error timeout;
+			proxy_pass http://backend;
+		}
+	}
+    # 设置后端项目地址
+	upstream backend {
+        # 192.168.1.2 为后端项目启动机子的 ip
+		server 192.168.1.2:8081 max_fails=5 fail_timeout=10s weight=1;
+		keepalive 100;
+	}
+    # === 添加内容结束 ===
+
+}
+
+```
+
+### 短信登录
+
+#### 基于 Session 实现登录
+
+![基于session实现登录流程](http://assets.processon.com/chart_image/6276157f0791290711fd71f4.png)
+
+
+
+- 集群的 session 共享问题
+- 基于 Redis 实现共享 session 登录
+
+
+
+
 
 
